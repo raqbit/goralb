@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"goralb"
+	"github.com/Raqbit/goralb"
 	"time"
 )
 

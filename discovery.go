@@ -71,6 +71,10 @@ func flushBrushDiscoveries(adapt *adapter.Adapter1) error {
 				// Remove device, ignore when unsuccessful
 				err = adapt.RemoveDevice(dev.Path())
 
+				if err != nil {
+					return fmt.Errorf("could not remove %s from brush cache: %w", dev.Properties.Address, err)
+				}
+
 				// We only care about this companyID
 				break
 			}
