@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/godbus/dbus"
 	"github.com/muka/go-bluetooth/api"
 	"github.com/muka/go-bluetooth/bluez/profile/adapter"
 	"github.com/muka/go-bluetooth/bluez/profile/device"
@@ -12,9 +11,15 @@ import (
 
 const PGCompanyID = 0xDC
 
+type BrushManager struct{}
+
+func NewBrushManager() *BrushManager {
+	return &BrushManager{}
+}
+
 // Searches for a single brush
-func FindBrush(ctx context.Context) (*Advertisement, error) {
-	brushes, err := FindBrushes(ctx, 1)
+func (bm BrushManager) FindBrush(ctx context.Context) (*Brush, error) {
+	brushes, err := bm.FindBrushes(ctx, 1)
 
 	if err != nil {
 		return nil, err
@@ -28,22 +33,20 @@ func FindBrush(ctx context.Context) (*Advertisement, error) {
 }
 
 // Searches for specified amount of brushes
-func FindBrushes(ctx context.Context, count int) ([]*Advertisement, error) {
-	defer api.Exit()
-
+func (bm BrushManager) FindBrushes(ctx context.Context, count int) ([]*Brush, error) {
 	adapt, err := adapter.GetDefaultAdapter()
 
 	if err != nil {
 		return nil, err
 	}
 
-	err = flushBrushDiscoveries(adapt)
+	err = bm.flushBrushDiscoveries(adapt)
 
 	if err != nil {
 		return nil, fmt.Errorf("could not flush brush discoveries: %w", err)
 	}
 
-	adverts, err := discoverBrushes(ctx, adapt, count)
+	adverts, err := bm.discoverBrushes(ctx, adapt, count)
 
 	if err != nil {
 		return nil, fmt.Errorf("could not discover brushes: %w", err)
@@ -52,7 +55,7 @@ func FindBrushes(ctx context.Context, count int) ([]*Advertisement, error) {
 	return adverts, nil
 }
 
-func flushBrushDiscoveries(adapt *adapter.Adapter1) error {
+func (bm BrushManager) flushBrushDiscoveries(adapt *adapter.Adapter1) error {
 	devices, err := adapt.GetDevices()
 
 	if err != nil {
@@ -84,7 +87,7 @@ func flushBrushDiscoveries(adapt *adapter.Adapter1) error {
 	return nil
 }
 
-func discoverBrushes(ctx context.Context, adapt *adapter.Adapter1, count int) ([]*Advertisement, error) {
+func (bm BrushManager) discoverBrushes(ctx context.Context, adapt *adapter.Adapter1, count int) ([]*Brush, error) {
 	// Only discover LE devices and do not give duplicates
 	filter := &adapter.DiscoveryFilter{
 		Transport:     adapter.DiscoveryFilterTransportLE,
@@ -93,13 +96,15 @@ func discoverBrushes(ctx context.Context, adapt *adapter.Adapter1, count int) ([
 
 	// Discover new devices
 	discoveries, cancel, err := api.Discover(adapt, filter)
-	defer cancel()
 
 	if err != nil {
 		return nil, err
 	}
 
-	adverts := make([]*Advertisement, 0, count)
+	// FIXME: this sometimes hangs
+	defer cancel()
+
+	brushes := make([]*Brush, 0, count)
 
 	for {
 		select {
@@ -119,24 +124,22 @@ func discoverBrushes(ctx context.Context, adapt *adapter.Adapter1, count int) ([
 			}
 
 			// Check if device has the right companyID
-			mfd, exists := dev.Properties.ManufacturerData[PGCompanyID]
-			if !exists {
+			if _, exists := dev.Properties.ManufacturerData[PGCompanyID]; !exists {
 				continue
 			}
 
-			// Get the raw manufacturer data bytes
-			mfBytes := mfd.(dbus.Variant).Value().([]byte)
+			// Create brush from found device, append to list
+			brushes = append(brushes, NewBrush(dev))
 
-			// Parse advertisement
-			adv := ParseAdvertisement(mfBytes)
-
-			adverts = append(adverts, adv)
-
-			if len(adverts) == count {
-				return adverts, nil
+			if len(brushes) == count {
+				return brushes, nil
 			}
 		case <-ctx.Done():
-			return adverts, nil
+			return brushes, nil
 		}
 	}
+}
+
+func (bm BrushManager) Close() error {
+	return api.Exit()
 }
