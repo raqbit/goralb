@@ -20,7 +20,7 @@ Connecting to the brush: `gatttool --device=<ADDR> -I`
 **Setting the color to green (#00ff00)**
 ```
 connect                         # Connect to the brush
-char-write-req 0x0071 00ff0000  #  Set color to 00ff00
+char-write-req 0x0071 00ff0000  # Set color to 00ff00
 char-write-req 0x0052 1031      # Makes the light go on (and saves the change)
 char-write-req 0x0052 372f      # Unknown status update
 ```
