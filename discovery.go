@@ -11,14 +11,32 @@ import (
 
 const PGCompanyID = 0xDC
 
-type BrushManager struct{}
+type (
+	BrushScanner interface {
+		FindBrush(ctx context.Context) (Brush, error)
+		FindBrushes(ctx context.Context, count int) ([]Brush, error)
+		Close() error
+	}
 
-func NewBrushManager() *BrushManager {
-	return &BrushManager{}
+	brushScanner struct {
+		adapter *adapter.Adapter1
+	}
+)
+
+func NewScanner() (*brushScanner, error) {
+	btAdapter, err := adapter.GetDefaultAdapter()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &brushScanner{
+		adapter: btAdapter,
+	}, nil
 }
 
 // Searches for a single brush
-func (bm BrushManager) FindBrush(ctx context.Context) (*Brush, error) {
+func (bm brushScanner) FindBrush(ctx context.Context) (Brush, error) {
 	brushes, err := bm.FindBrushes(ctx, 1)
 
 	if err != nil {
@@ -33,20 +51,14 @@ func (bm BrushManager) FindBrush(ctx context.Context) (*Brush, error) {
 }
 
 // Searches for specified amount of brushes
-func (bm BrushManager) FindBrushes(ctx context.Context, count int) ([]*Brush, error) {
-	adapt, err := adapter.GetDefaultAdapter()
-
-	if err != nil {
-		return nil, err
-	}
-
-	err = bm.flushBrushDiscoveries(adapt)
+func (bm brushScanner) FindBrushes(ctx context.Context, count int) ([]Brush, error) {
+	err := bm.flushBrushDiscoveries()
 
 	if err != nil {
 		return nil, fmt.Errorf("could not flush brush discoveries: %w", err)
 	}
 
-	adverts, err := bm.discoverBrushes(ctx, adapt, count)
+	adverts, err := bm.discoverBrushes(ctx, count)
 
 	if err != nil {
 		return nil, fmt.Errorf("could not discover brushes: %w", err)
@@ -55,8 +67,9 @@ func (bm BrushManager) FindBrushes(ctx context.Context, count int) ([]*Brush, er
 	return adverts, nil
 }
 
-func (bm BrushManager) flushBrushDiscoveries(adapt *adapter.Adapter1) error {
-	devices, err := adapt.GetDevices()
+// Same as Adapter1#FlushDevices() except specifically for PG company ID
+func (bm brushScanner) flushBrushDiscoveries() error {
+	devices, err := bm.adapter.GetDevices()
 
 	if err != nil {
 		return err
@@ -72,7 +85,7 @@ func (bm BrushManager) flushBrushDiscoveries(adapt *adapter.Adapter1) error {
 		for companyId := range dev.Properties.ManufacturerData {
 			if companyId == PGCompanyID {
 				// Remove device, ignore when unsuccessful
-				err = adapt.RemoveDevice(dev.Path())
+				err = bm.adapter.RemoveDevice(dev.Path())
 
 				if err != nil {
 					return fmt.Errorf("could not remove %s from brush cache: %w", dev.Properties.Address, err)
@@ -87,7 +100,7 @@ func (bm BrushManager) flushBrushDiscoveries(adapt *adapter.Adapter1) error {
 	return nil
 }
 
-func (bm BrushManager) discoverBrushes(ctx context.Context, adapt *adapter.Adapter1, count int) ([]*Brush, error) {
+func (bm brushScanner) discoverBrushes(ctx context.Context, count int) ([]Brush, error) {
 	// Only discover LE devices and do not give duplicates
 	filter := &adapter.DiscoveryFilter{
 		Transport:     adapter.DiscoveryFilterTransportLE,
@@ -95,16 +108,16 @@ func (bm BrushManager) discoverBrushes(ctx context.Context, adapt *adapter.Adapt
 	}
 
 	// Discover new devices
-	discoveries, cancel, err := api.Discover(adapt, filter)
+	discoveries, cancel, err := api.Discover(bm.adapter, filter)
 
 	if err != nil {
 		return nil, err
 	}
 
-	// FIXME: this sometimes hangs
+	// FIXME: this sometimes hangs?
 	defer cancel()
 
-	brushes := make([]*Brush, 0, count)
+	brushes := make([]Brush, 0, count)
 
 	for {
 		select {
@@ -140,6 +153,6 @@ func (bm BrushManager) discoverBrushes(ctx context.Context, adapt *adapter.Adapt
 	}
 }
 
-func (bm BrushManager) Close() error {
+func (bm brushScanner) Close() error {
 	return api.Exit()
 }
