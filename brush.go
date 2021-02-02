@@ -33,7 +33,7 @@ type (
 		HasProfessionalTimer bool
 		BrushTime            time.Duration
 		Mode                 BrushMode
-		Sector               BrushSector
+		Quadrant             BrushQuadrant
 		Smiley               int
 	}
 
@@ -161,8 +161,8 @@ func (b brush) String() string {
 	info := b.Info()
 
 	return fmt.Sprintf(
-		`Oral-B ToothbrushType: %d, Firmware version: v%d, Mode: %s, State: %s, Sector: %s, Pressure: %v`,
-		info.TypeID, info.FirmwareVersion, info.Mode, info.State, info.Sector, info.PressureDetected)
+		`Oral-B ToothbrushType: %d, Firmware version: v%d, Mode: %s, State: %s, Quadrant: %s, Pressure: %v`,
+		info.TypeID, info.FirmwareVersion, info.Mode, info.State, info.Quadrant, info.PressureDetected)
 }
 
 func (b brush) control(option statusControl) error {
@@ -215,7 +215,7 @@ func NewBrush(dev *device.Device1) Brush {
 			HasProfessionalTimer: mfBytes[4]&0x1 == 0,
 			BrushTime:            time.Duration(mfBytes[5]*60+mfBytes[6]) * time.Second, // (mins * secs_in_min + secs) * nanos_in_sec
 			Mode:                 BrushMode(mfBytes[7]),
-			Sector:               BrushSector(int(mfBytes[8])),
+			Quadrant:             BrushQuadrant(int(mfBytes[8])),
 			Smiley:               int(mfBytes[8] & 0x38 >> 3),
 		},
 	}
