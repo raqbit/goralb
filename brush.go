@@ -2,6 +2,7 @@ package goralb
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/godbus/dbus/v5"
@@ -19,6 +20,7 @@ type (
 		SetMotionEnabled(enabled bool) error
 		GetColor() (color.RGBA, error)
 		SetColor(rgba color.RGBA) error
+		TimerUpdates() (<-chan uint16, error)
 		Info() *BrushInfo
 		String() string
 	}
@@ -41,6 +43,7 @@ type (
 		btDev *device.Device1
 		info  *BrushInfo
 
+		timer  *gatt.GattCharacteristic1
 		status *gatt.GattCharacteristic1
 		color  *gatt.GattCharacteristic1
 	}
@@ -72,6 +75,12 @@ func (b *brush) Connect(timeout context.Context) error {
 
 	if err = b.waitForServicesResolved(timeout); err != nil {
 		return fmt.Errorf("could not resolve services: %w", err)
+	}
+
+	b.timer, err = b.btDev.GetCharByUUID(brushingTimerChar)
+
+	if err != nil {
+		return fmt.Errorf("could not get timer characteristic: %w", err)
 	}
 
 	b.status, err = b.btDev.GetCharByUUID(statusChar)
@@ -151,6 +160,16 @@ func (b *brush) SetColor(rgba color.RGBA) error {
 	}
 
 	return nil
+}
+
+func (b brush) TimerUpdates() (<-chan uint16, error) {
+	updates := make(chan uint16)
+
+	err := EnableNotifications(b.timer, func(buf []byte) {
+		updates <- binary.BigEndian.Uint16(buf)
+	})
+
+	return updates, err
 }
 
 func (b brush) Info() *BrushInfo {
